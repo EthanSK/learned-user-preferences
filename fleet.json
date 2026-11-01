@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "learned-user-preferences",
+  "sync": { "include": ["scripts/**", "tests/**", "templates/**", "SKILL.md", "user-preferences.md", "references/**", "skill-update.json"] },
+  "profiles": {
+    "test": {
+      "description": "Run isolated preference lookup and validation tests",
+      "kind": "test",
+      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+      "timeoutMinutes": 5,
+      "requires": { "tools": ["python3", "git"] },
+      "success": { "minTestCount": { "pattern": "Ran (\\d+) tests", "min": 1 } }
+    }
+  }
+}
