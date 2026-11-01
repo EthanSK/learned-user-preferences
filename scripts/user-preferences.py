@@ -4,11 +4,15 @@
 Agents use locate before choosing a project's history, index for selective lookup,
 and check after their own file edits. Git's common directory joins worktrees;
 credential-free origin aliases recover moved projects without merging forks.
+Without --query, index prints a compact branch map (Markdown files and entry
+counts); with --query it lists matching entries with their Meaning and exact
+inclusive line range, so an agent reads only the entries a decision needs.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import json
@@ -17,11 +21,16 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from urllib.parse import urlsplit
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-ENTRY = re.compile(r"^### (\d{4}-\d{2}-\d{2}-[a-z0-9-]+) — (.+)$", re.MULTILINE)
+ENTRY = re.compile(r"^### (\d{4}-\d{2}-\d{2}-[a-z0-9-]+) — (.+)$")
+# An entry is a ### Markdown section, so a column-zero level 1-3 heading closes
+# it, as Markdown nesting does. #### subheadings and indented list content stay
+# inside the entry.
+SECTION_HEADING = re.compile(r"^#{1,3}(?:[ \t]|$)")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 FIELD = re.compile(r"^- \*\*([^*\n]+):\*\*[ \t]*(.*?)(?=^- \*\*[^*\n]+:\*\*|\Z)", re.MULTILINE | re.DOTALL)
 KINDS = {"preference", "decision", "rejection", "correction", "delegated"}
 REQUIRED_FIELDS = {"Status", "Kind", "Scope", "Source", "User's words", "Meaning"}
@@ -165,6 +174,8 @@ class PreferenceEntry:
     title: str
     path: Path
     line: int
+    # Inclusive 1-based last line of the entry, excluding trailing blank lines.
+    end_line: int
     fields: dict[str, str]
     text: str
     duplicate_fields: list[str]
@@ -177,13 +188,47 @@ def markdown_files(scope: Path) -> list[Path]:
                   if not path.is_symlink() and not any(part.startswith(".") for part in path.relative_to(scope).parts))
 
 
+def entry_end(lines: list[str], start: int, limit: int) -> int:
+    """Return the exclusive line index where the entry heading at ``start`` ends.
+
+    A column-zero level 1-3 heading closes the entry, so a file's grouping
+    headings and prose are not reported (or searched) as part of the entry above
+    them. Heading-like lines inside a fenced code block do not close it, so an
+    example containing ``# comment`` is never cut short. ``limit`` is the next
+    entry heading, which always starts a new entry: an unclosed fence can only
+    lengthen a range, never hide later entries.
+    """
+    fence = ""
+    for index in range(start + 1, limit):
+        line = lines[index]
+        marker = FENCE.match(line)
+        if fence:
+            if (marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence)
+                    and not marker.group(2).strip()):
+                fence = ""
+        elif marker:
+            fence = marker.group(1)
+        elif SECTION_HEADING.match(line):
+            return index
+    return limit
+
+
 def entries(scope: Path) -> list[PreferenceEntry]:
     result = []
     for path in markdown_files(scope):
-        text = path.read_text(encoding="utf-8")
-        headings = list(ENTRY.finditer(text))
-        for number, heading in enumerate(headings):
-            body = text[heading.end():headings[number + 1].start() if number + 1 < len(headings) else len(text)]
+        lines = path.read_text(encoding="utf-8").split("\n")
+        headings = []
+        for index, line in enumerate(lines):
+            heading = ENTRY.match(line)
+            if heading:
+                headings.append((index, heading))
+        for number, (start, heading) in enumerate(headings):
+            end = entry_end(lines, start, headings[number + 1][0] if number + 1 < len(headings) else len(lines))
+            last = end - 1
+            # Blank lines separate entries; they are not part of the readable range.
+            while last > start and not lines[last].strip():
+                last -= 1
+            body = "\n".join(lines[start + 1:end])
             fields: dict[str, str] = {}
             duplicate_fields = []
             for field in FIELD.finditer(body):
@@ -191,8 +236,8 @@ def entries(scope: Path) -> list[PreferenceEntry]:
                 if key in fields:
                     duplicate_fields.append(key)
                 fields[key] = value
-            result.append(PreferenceEntry(heading.group(1), heading.group(2), path,
-                          text.count("\n", 0, heading.start()) + 1, fields, body, duplicate_fields))
+            result.append(PreferenceEntry(heading.group(1), heading.group(2), path, start + 1, last + 1,
+                                          fields, body, duplicate_fields))
     return result
 
 
@@ -253,6 +298,46 @@ def check(scope: Path) -> dict[str, Any]:
     return {"ok": not errors, "entries": len(records), "files": len(markdown_files(scope)), "errors": errors}
 
 
+def entry_summary(record: PreferenceEntry) -> dict[str, Any]:
+    """Describe one match well enough to choose it before reading its range."""
+    meaning = record.fields.get("Meaning")
+    return {"id": record.identifier, "title": record.title,
+            "status": record.fields.get("Status"), "scope": record.fields.get("Scope"),
+            # Meaning is the entry's own one-line summary, so lookup needs no
+            # second maintained index or generated digest.
+            "meaning": " ".join(meaning.split()) if meaning else None,
+            "file": str(record.path),
+            # Inclusive 1-based range: reading line..end_line yields the whole entry.
+            "line": record.line, "end_line": record.end_line}
+
+
+def branch_map(scope: Path) -> dict[str, Any]:
+    """Summarize the live hierarchy without printing any entry.
+
+    Earlier versions listed every entry when no query was given. This map grows
+    with topic files, not with recorded evidence, so an agent can pick a branch
+    before reading entries. Pass a branch directory as the scope to narrow it.
+    """
+    files = markdown_files(scope)
+    counts = Counter(record.path for record in entries(scope))
+    return {"scope": str(scope), "files": len(files), "entries": sum(counts.values()),
+            "branches": [{"path": path.relative_to(scope).as_posix(), "entries": counts[path]} for path in files]}
+
+
+def index_scope(scope: Path, query: str) -> Union[dict[str, Any], list[dict[str, Any]]]:
+    terms = query.casefold().split()
+    if not terms:
+        return branch_map(scope)
+    # Every term must appear in the entry's ID, path, title or body. Including the
+    # ID lets an agent follow a "superseded by <id>" pointer to the entry itself.
+    # Results keep file order, so one topic's matches stay adjacent for a ranged
+    # read, and superseded entries stay visible with their status pointer instead
+    # of being ranked by inferred relevance.
+    return [entry_summary(record) for record in entries(scope)
+            if all(term in " ".join((record.identifier, str(record.path.relative_to(scope)),
+                                     record.title, record.text)).casefold() for term in terms)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path)
@@ -261,9 +346,11 @@ def main() -> int:
     locating.add_argument("--cwd", type=Path, default=Path.cwd())
     locating.add_argument("--project-root", type=Path)
     commands.add_parser("inventory")
-    indexing = commands.add_parser("index")
-    indexing.add_argument("scope", type=Path)
-    indexing.add_argument("--query", default="")
+    indexing = commands.add_parser("index", help="branch map, or matching entries with exact line ranges")
+    indexing.add_argument("scope", type=Path, help="a profile, the general scope, or a branch directory inside one")
+    indexing.add_argument("--query", default="",
+                          help="terms that must all appear, case-insensitively, in an entry's ID, path, title or body; "
+                               "omit for the compact branch map")
     checking = commands.add_parser("check")
     checking.add_argument("scope", type=Path)
     args = parser.parse_args()
@@ -276,12 +363,7 @@ def main() -> int:
     elif args.command == "inventory":
         output = [{"profile": str(path), "name": data["name"], "skill_name": data["skill_name"]} for path, data in profiles(store)]
     elif args.command == "index":
-        scope = args.scope.expanduser().resolve()
-        terms = args.query.casefold().split()
-        output = [{"id": record.identifier, "title": record.title,
-                   "status": record.fields.get("Status"), "scope": record.fields.get("Scope"),
-                   "file": str(record.path), "line": record.line} for record in entries(scope)
-                  if all(term in (str(record.path.relative_to(scope)) + " " + record.title + " " + record.text).casefold() for term in terms)]
+        output = index_scope(args.scope.expanduser().resolve(), args.query)
     else:
         output = check(args.scope.expanduser().resolve())
     print(json.dumps(output, indent=2, ensure_ascii=False))

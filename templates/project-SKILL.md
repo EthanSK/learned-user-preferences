@@ -1,6 +1,6 @@
 ---
 name: {{skill_name}}
-description: Use whenever you want to learn about the kinds of things the user wants for {{project_name}}. Read this project's expressed preferences, decision reasons, examples, corrections and rejected alternatives; save new evidence without replacing technical learnings or operating instructions.
+description: Use whenever you want to learn about the kinds of things the user wants for {{project_name}}, such as when an open choice here depends on their taste, they refer to an earlier project decision or ask why, or they express a new preference to save. Look up only matching entries; routine work already settled by current instructions needs no lookup. Does not replace technical learnings or operating instructions.
 ---
 
 # {{project_name}} user preferences
@@ -13,10 +13,10 @@ Potentially improve this skill as part of using it. Preserve clear user preferen
 
 ## Skill usage announcement
 
-Tell the user this project preference skill is active and why before skill-directed action, using their response-preference format when available. Honor explicit silent-use exceptions.
+Tell the user this project preference skill is active and why before skill-directed action, using their response-preference format when available. When it is used together with `learned-user-preferences`, one announcement can name both. Honor explicit silent-use exceptions.
 
 ## Read and record
 
-Read [user-preferences.md](user-preferences.md) for project scope, coverage and existing sources. Use `learned-user-preferences` for the shared recording, selective lookup and correction protocol; its root reference is also named `user-preferences.md`. Read only relevant branches of this project's `preferences/` tree. Capture exact user wording, context, reasons, rejected choices, examples and source pointers. Keep one-off and delegated choices scoped; earlier permission never authorizes another action. Label inferred reasons and agent examples. Preserve superseded evidence. Operating instructions and existing skill/technical learning duties remain in force; useful duplication is allowed.
+Use `learned-user-preferences` for the shared recording, selective lookup and correction protocol, including when a lookup is needed at all; its root reference is also named `user-preferences.md`. Read [user-preferences.md](user-preferences.md) when this project's scope, coverage or existing sources are unfamiliar. For a needed lookup, query the narrowest relevant branch of this project's `preferences/` tree and read only the entries a decision needs. Capture exact user wording, context, reasons, rejected choices, examples and source pointers. Keep one-off and delegated choices scoped; earlier permission never authorizes another action. Label inferred reasons and agent examples. Preserve superseded evidence. Operating instructions and existing skill/technical learning duties remain in force; useful duplication is allowed.
 
 This profile is private. Validate its entries and discovery after changes. Do not publish its history or replace another project's profile.

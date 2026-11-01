@@ -44,6 +44,50 @@ def entry(identifier="2030-01-02-preview-abc123", status="active", supersedes=No
             + (f"- **Supersedes:** {supersedes}\n" if supersedes else ""))
 
 
+TOPICS = {"editor": ("preview", "toolbar", "shortcuts"), "export": ("formats", "naming"), "website": ("landing", "docs")}
+
+
+def fixture_lines(identifier, title, meaning, status="active", supersedes=None, examples=()):
+    lines = [f"### {identifier} — {title}", f"- **Status:** {status}", "- **Kind:** preference",
+             "- **Scope:** project", "- **Source:** authored fixture message, 2030-01-02, message 1",
+             "- **User's words:**", f"  > {title}.", f"- **Meaning:** {meaning}"]
+    if supersedes:
+        lines.append(f"- **Supersedes:** {supersedes}")
+    if examples:
+        lines += ["- **Examples:** Agent-created illustration:", *examples]
+    return lines
+
+
+def write_hierarchy(profile):
+    """Write fictional topic files and return each entry's expected file, range, meaning and status."""
+    expected = {}
+    for aspect, topics in TOPICS.items():
+        branch = profile / "preferences" / aspect
+        branch.mkdir(parents=True)
+        for topic in topics:
+            ids = [f"2030-01-02-{aspect}-{topic}-{number}" for number in range(4)]
+            lines = [f"# {topic.title()} preferences", ""]
+            for number, identifier in enumerate(ids):
+                if number == 2:
+                    # File-level grouping prose belongs to no entry.
+                    lines += ["## Later grouping", "", "Grouping prose outside every entry.", ""]
+                status, supersedes, examples = "active", None, ()
+                if (aspect, topic) == ("editor", "preview") and number == 0:
+                    status = "superseded by " + ids[3]
+                if (aspect, topic) == ("editor", "preview") and number == 3:
+                    supersedes = ids[0]
+                if number == 1:
+                    # A column-zero fence containing a heading-like line stays inside its entry.
+                    examples = ("```text", "# not a heading", "```")
+                meaning = f"Keep {topic} {aspect} choice {number}" + (" with strong contrast." if number == 1 else ".")
+                start = len(lines) + 1
+                lines += fixture_lines(identifier, f"{aspect} {topic} choice {number}", meaning, status, supersedes, examples)
+                expected[identifier] = (branch / f"{topic}.md", start, len(lines), meaning, status)
+                lines += ["", ""]
+            (branch / f"{topic}.md").write_text("\n".join(lines) + "\n")
+    return expected
+
+
 class PreferenceTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="preferences-fixture-")
@@ -144,8 +188,9 @@ class PreferenceTests(unittest.TestCase):
     def test_all_commands_preserve_files_and_git_index(self):
         profile = self.profile()
         (profile / "preferences/layout.md").write_text(entry())
+        write_hierarchy(profile)
         before = snapshot(self.root)
-        for command in (("locate", "--cwd", self.repo), ("inventory",),
+        for command in (("locate", "--cwd", self.repo), ("inventory",), ("index", profile),
                         ("index", profile, "--query", "preview"), ("check", profile)):
             result = self.command(*command)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -162,6 +207,59 @@ class PreferenceTests(unittest.TestCase):
         self.assertEqual(found[0]["scope"], "one-off: fixture task")
         self.assertTrue(found[0]["file"].endswith("width.md"))
         self.assertEqual(json.loads(self.command("index", profile, "--query", "unrelated").stdout), [])
+
+    def test_query_returns_meaning_and_exact_inclusive_ranges(self):
+        profile = self.profile()
+        expected = write_hierarchy(profile)
+        self.assertTrue(reader.check(profile)["ok"], reader.check(profile)["errors"])
+        rows = json.loads(self.command("index", profile, "--query", "CONTRAST").stdout)
+        self.assertEqual(sorted(row["id"] for row in rows),
+                         sorted(identifier for identifier in expected if identifier.endswith("-1")))
+        for row in rows:
+            path, start, end, meaning, status = expected[row["id"]]
+            self.assertEqual((row["file"], row["line"], row["end_line"], row["meaning"], row["status"]),
+                             (str(path), start, end, meaning, status))
+            ranged = path.read_text().split("\n")[row["line"] - 1:row["end_line"]]
+            self.assertTrue(ranged[0].startswith("### " + row["id"] + " — "))
+            self.assertIn("# not a heading", ranged)
+            self.assertNotIn("## Later grouping", ranged)
+        # Grouping prose sits between entries and is not attributed to the entry above it.
+        self.assertEqual(json.loads(self.command("index", profile, "--query", "grouping").stdout), [])
+
+    def test_superseded_matches_stay_reachable_by_pointer(self):
+        profile = self.profile()
+        expected = write_hierarchy(profile)
+        old, new = "2030-01-02-editor-preview-0", "2030-01-02-editor-preview-3"
+        rows = {row["id"]: row for row in json.loads(self.command("index", profile, "--query", new).stdout)}
+        self.assertEqual(set(rows), {old, new})
+        self.assertEqual(rows[old]["status"], "superseded by " + new)
+        self.assertEqual((rows[old]["line"], rows[old]["end_line"]), expected[old][1:3])
+
+    def test_unqueried_index_is_a_branch_map_not_entries(self):
+        profile = self.profile()
+        expected = write_hierarchy(profile)
+        result = self.command("index", profile)
+        branch_map = json.loads(result.stdout)
+        self.assertEqual((branch_map["files"], branch_map["entries"]), (8, len(expected)))
+        self.assertIn({"path": "preferences/editor/preview.md", "entries": 4}, branch_map["branches"])
+        self.assertIn({"path": "user-preferences.md", "entries": 0}, branch_map["branches"])
+        self.assertEqual(sum(row["entries"] for row in branch_map["branches"]), len(expected))
+        for identifier in expected:
+            self.assertNotIn(identifier, result.stdout)
+        # More evidence in an existing topic grows the counts, not the map.
+        preview = profile / "preferences/editor/preview.md"
+        extra = "\n".join(line for number in range(10)
+                          for line in fixture_lines(f"2030-02-03-extra-{number}", f"extra {number}", "More evidence.") + [""])
+        preview.write_text(preview.read_text() + "\n" + extra + "\n")
+        grown = json.loads(self.command("index", profile).stdout)
+        self.assertEqual((len(grown["branches"]), grown["entries"]), (8, len(expected) + 10))
+        # A branch directory narrows both the map and a query.
+        export = profile / "preferences/export"
+        self.assertEqual([row["path"] for row in json.loads(self.command("index", export).stdout)["branches"]],
+                         ["formats.md", "naming.md"])
+        rows = json.loads(self.command("index", export, "--query", "contrast").stdout)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(Path(row["file"]).parent == export for row in rows))
 
     def test_required_fields_duplicate_ids_and_bad_values_fail(self):
         profile = self.profile()

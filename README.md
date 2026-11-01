@@ -2,7 +2,7 @@
 
 A Codex skill for remembering what the user wants, with their words, examples and reasons intact.
 
-The description begins: **“Use whenever you want to learn about the kinds of things the user wants.”** It captures preferences, corrections, rejected options and the choices that narrow a decision. An agent can read a small project root, search a relevant branch and look deeper when useful.
+The description begins: **“Use whenever you want to learn about the kinds of things the user wants.”** It captures preferences, corrections, rejected options and the choices that narrow a decision. Routine work that current instructions already settle needs no lookup. When the user's taste matters for an open choice, an agent searches the relevant branch, reads only the matching entries, and looks deeper when the decision warrants it.
 
 The reusable skill is public. Your actual preference history lives in a separate private store. Each project gets its own preference skill and `user-preferences.md`; Git working copies share the same history. Detailed Markdown files can grow into branches by project aspect or affected file. The live branch map is read from those files, not kept as a second editable list.
 
@@ -26,10 +26,13 @@ Ask the agent to use `$learned-user-preferences` and set up the actual project's
 python3 scripts/user-preferences.py locate --cwd /path/to/project
 python3 scripts/user-preferences.py locate --project-root /path/to/non-git-project
 python3 scripts/user-preferences.py inventory
+python3 scripts/user-preferences.py index /path/to/private/profile
 python3 scripts/user-preferences.py index /path/to/private/profile --query preview
 python3 scripts/user-preferences.py check /path/to/private/profile
 python3 -m unittest discover -s tests -v
 ```
+
+Without `--query`, `index` prints a compact branch map: each Markdown file with its entry count. Earlier versions listed every entry instead. With `--query`, it lists the matching entries' ID, title, status, scope, meaning, file and exact inclusive `line`–`end_line` range. Any branch directory can be the scope.
 
 The helper never creates profiles or edits preferences. The agent makes recording and reconciliation decisions and uses ordinary file tools. Python keeps the same standard-library runtime already needed by the existing public-skill update helper.
 

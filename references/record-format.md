@@ -2,9 +2,9 @@
 
 Use ordinary Markdown. This preserves long quotes, examples and reasons without forcing them into escaped JSON/XML strings. Structured pointers and identities can use JSON, but rich preference evidence stays readable.
 
-Each preference entry has a stable, unique ID: `YYYY-MM-DD-subject-<short-random-suffix>`. Group related entries in one useful topic file; create a separate task-owned leaf when parallel edits would otherwise collide. The entry heading is `### <id> — <short title>`.
+Each preference entry has a stable, unique ID: `YYYY-MM-DD-subject-<short-random-suffix>`. Group related entries in the topic file for their subject; when parallel edits would otherwise collide, use a topic-named leaf in the same branch rather than a task-named file. The entry heading is `### <id> — <short title>`. An entry runs until the next `#`, `##` or `###` heading at the start of a line; use `####` for any subheading inside an entry.
 
-Required fields are `Status`, `Kind`, `Scope`, `Source`, `User's words`, and `Meaning`. Keep `Context`, `Reason`, `Alternatives rejected`, `Examples`, `Related` and `Supersedes` whenever they preserve useful evidence. Reasons may explicitly say `not stated`; lack of a reason is not a reason to omit the preference.
+Required fields are `Status`, `Kind`, `Scope`, `Source`, `User's words`, and `Meaning`. Write `Meaning` as one self-contained statement of what the user wants, with its conditions: lookup shows it first, before an agent decides whether to read the entry. Keep `Context`, `Reason`, `Alternatives rejected`, `Examples`, `Related` and `Supersedes` whenever they preserve useful evidence, scaled to the decision. Reasons may explicitly say `not stated`; lack of a reason is not a reason to omit the preference.
 
 ```markdown
 ### 2030-01-02-wider-preview-a4f19c — Give the preview more space
@@ -30,4 +30,4 @@ For a genuine replacement, create the new entry with `- **Supersedes:** <old-id>
 
 Source pointers should be useful after the task ends: visible task title plus stable ID and message/date, a canonical prompt path, a repository-relative file and heading/line, or an immutable commit. Clearly distinguish a conversation quote from an existing maintained instruction. Do not invent a source, date or exact quotation from a summary. Private source paths stay private.
 
-Read only the relevant branches. Run `check` after edits: it checks required fields, allowed kinds/statuses/scopes, unique IDs and reciprocal supersession links. It cannot judge quote fidelity, infer the user's intent or prove that every preference was captured. The agent must compare entries with the real message.
+Read only the entries a decision needs, using the line ranges `index --query` returns. Run `check` after edits: it checks required fields, allowed kinds/statuses/scopes, unique IDs and reciprocal supersession links. It cannot judge quote fidelity, infer the user's intent or prove that every preference was captured. The agent must compare entries with the real message.

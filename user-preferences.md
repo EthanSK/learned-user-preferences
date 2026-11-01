@@ -19,7 +19,7 @@ user-preferences/
     preferences/<aspect>/<file>/<topic>.md  a deeper branch when useful
 ```
 
-Use the read-only helper's `locate`, `inventory`, `index` and `check` commands. The project root explains its scope and points to its `preferences/` tree; the live index is derived from the actual files, not maintained as a second source. Agents can read just the relevant branch, and can choose to look deeper when deciding what the user would want.
+Use the read-only helper's `locate`, `inventory`, `index` and `check` commands. The project root explains its scope and points to its `preferences/` tree; the live index is derived from the actual files, not maintained as a second source. `index` without a query shows the branch map (files and entry counts); with `--query` it lists matching entries with their meaning and exact line ranges. Agents look up preferences for an open question about what the user wants or when asked about an earlier decision, read only the entries that question needs, and look deeper when it is consequential or unresolved.
 
 Keep cross-project preferences in `general`. Keep project-specific decisions in that project's profile. For a preference about a particular skill, use the corresponding `general/preferences/skills/<skill-name>/` branch, or that project's branch when the skill is project-specific. Cross-link relevant records instead of copying the entire history.
 
